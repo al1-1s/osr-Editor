@@ -38,7 +38,7 @@ MODS = {
     "ScoreV2": 1 << 29,
     "Mirror": 1 << 30,
 }
-
+MODE = {0: "std", 1: "taiko", 2: "catch", 3: "mania"}
 
 class ReplayFrame:
     """
@@ -57,13 +57,35 @@ class ReplayFrame:
         self.x = int(x)
         self.y = int(y)
         self.keys = int(z)
+        # TODO: 解析 keys 位域，区分鼠标按键和键盘按键，并根据模式区分不同的按键含义
         pass
 
 
 class Replay:
     def __init__(self, **kwargs):
+        self.mode: int|None = None
+        self.version: int|None = None
+        self.beatmap_hash: str|None = None
+        self.player_name: str|None = None
+        self.replay_hash: str|None = None
+        self.count_300: int|None = None
+        self.count_100: int|None = None
+        self.count_50: int|None = None
+        self.count_geki: int|None = None
+        self.count_katu: int|None = None
+        self.count_miss: int|None = None
+        self.score: int|None = None
+        self.max_combo: int|None = None
+        self.perfect: bool|None = None
+        self.mods: list[str]|None = None
+        self.time_tick: int|None = None
+        self.time: str|None = None
+        self.score_id: int|None = None
+        self.frames: list[ReplayFrame] = []
+        
         meta = kwargs.get("meta", {})
         frames = kwargs.get("frames", [])
+        
         for key, value in meta.items():
             setattr(self, key, value)
         if len(frames) > 0 and isinstance(frames[0], str):
@@ -85,7 +107,7 @@ class Replay:
         Returns:
             (replay_meta, life_bar_graph, replay_data) (tuple[dict, str, str]): A tuple containing the unpacked replay meta as a dictionary, the life bar graph as a string, and the unzipped replay data as a string.
         """
-        MODE = {0: "std", 1: "taiko", 2: "catch", 3: "mania"}
+        
         meta = {}
         pos = 0
 
@@ -93,7 +115,7 @@ class Replay:
             int.from_bytes(data[pos : pos + 1], byteorder="little", signed=False),
             1,
         )
-        meta["mode"] = MODE.get(mode, "unknown")
+        meta["mode"] = mode
         pos += offset
 
         version, offset = ints.decode(data[pos:])
@@ -169,7 +191,7 @@ class Replay:
         )
         pos += offset
 
-        meta[life_bar_graph] = life_bar_graph
+        meta["life_bar_graph"] = life_bar_graph
         print(f"Parsed meta: {meta}")
 
         length_data, offset = ints.decode(data[pos:])
@@ -236,7 +258,7 @@ class Replay:
             "score_id",
         ]
         for field in required_fields:
-            if not hasattr(self, field):
+            if not hasattr(self, field) or getattr(self, field) is None:
                 raise ValueError(f"Missing required meta field: {field}")
 
     def save_to_file(self, file_path: str):
@@ -247,6 +269,6 @@ class Replay:
         """
         # TODO: 实现将 Replay 对象重新打包成 .osr 文件的功能
         self.check_meta()
-
+        
         raise NotImplementedError("Saving replay to file is not implemented yet.")
         pass
