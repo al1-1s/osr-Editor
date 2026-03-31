@@ -188,27 +188,6 @@ class Replay:
         frames = replay_data.split(",") 
         self.frames = [ReplayFrame(frame) for frame in frames]
 
-    def construct_bytes(self) -> bytes:
-        """Construct the byte sequence representing the replay data for hash calculating.
-        
-        This method should take the current state of the Replay object (including meta data and frames) and construct a byte sequence that can be saved as a .osr file. 
-        The constructed byte sequence should follow the same format as the original .osr replay data, including the correct encoding of meta fields, compression of replay data, and calculation of the replay hash.
-        
-        Returns:
-            bytes: The byte sequence representing the replay data(not containing the header and hash).
-        """
-        # TODO
-        # We still need to figure out the exact fields used in calculating hash.
-
-    def recal_hash(self):
-        """Recalculate the replay hash based on the current replay data.
-        
-        This method should be called after modifying any of the replay data to ensure that the replay hash is consistent with the content.
-        """
-        # First to construct the replay data bytes from the current frames and meta data
-        # TODO
-        pass
-    
     def check_meta(self):
         """Check the consistency of the replay meta data.
         
