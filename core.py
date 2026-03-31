@@ -45,52 +45,21 @@ def unpack_osr(data: bytes) -> tuple[dict, str, str]:
     meta['count_300'] = count_300
     pos += offset
     
-    if mode == 0:  
-        count_100, offset = shorts.decode(data[pos:])
-        meta['count_100'] = count_100
-        pos += offset
+    count_100, offset = shorts.decode(data[pos:])
+    meta['count_100'] = count_100
+    pos += offset
 
-        count_50, offset = shorts.decode(data[pos:])
-        meta['count_50'] = count_50
-        pos += offset
-        
-        count_geki, offset = shorts.decode(data[pos:])
-        meta['count_geki'] = count_geki
-        pos += offset
-        
-        count_katu, offset = shorts.decode(data[pos:])
-        meta['count_katu'] = count_katu
-        pos += offset
-    elif mode == 1:
-        count_150, offset = shorts.decode(data[pos:])
-        meta['count_150'] = count_150
-        pos += offset
-    elif mode == 2:
-        count_100, offset = shorts.decode(data[pos:])
-        meta['count_100'] = count_100
-        pos += offset
-        
-        count_small_fruit, offset = shorts.decode(data[pos:])
-        meta['count_small_fruit'] = count_small_fruit
-        pos += offset
-    elif mode == 3:
-        count_100, offset = shorts.decode(data[pos:])
-        meta['count_100'] = count_100
-        pos += offset
-        
-        count_50, offset = shorts.decode(data[pos:])
-        meta['count_50'] = count_50
-        pos += offset
-        
-        count_320, offset = shorts.decode(data[pos:])
-        meta['count_320'] = count_320
-        pos += offset
-        
-        count_200, offset = shorts.decode(data[pos:])
-        meta['count_200'] = count_200
-        pos += offset
-    else:
-        raise ValueError(f"Unsupported game mode: {mode}")
+    count_50, offset = shorts.decode(data[pos:])
+    meta['count_50'] = count_50
+    pos += offset
+    
+    count_geki, offset = shorts.decode(data[pos:])
+    meta['count_geki'] = count_geki
+    pos += offset
+    
+    count_katu, offset = shorts.decode(data[pos:])
+    meta['count_katu'] = count_katu
+    pos += offset
     
     count_miss, offset = shorts.decode(data[pos:])
     meta['count_miss'] = count_miss
