@@ -1,5 +1,7 @@
 """Replay related classes"""
 
+from typing import cast
+
 from utils.data import *
 import lzma
 from utils.tick2date import dotnet_ticks_to_datetime
@@ -50,12 +52,13 @@ class ReplayFrame:
     - keys: The bitfield representing the keys (including mouse buttons and keyboard keys) pressed (for std),or keys presses (for taiko), or dashing state (for ctb).
     """
 
-    def __init__(self, frames: str):
+    def __init__(self, frame: str):
         # w | x | y | z
-        w, x, y, z = frames.split("|")
+        print(f"Parsing frame: {frame}")
+        w, x, y, z = frame.split("|")
         self.time = int(w)
-        self.x = int(x)
-        self.y = int(y)
+        self.x = float(x)
+        self.y = float(y)
         self.keys = int(z)
         # TODO: 解析 keys 位域，区分鼠标按键和键盘按键，并根据模式区分不同的按键含义
         pass
@@ -82,9 +85,11 @@ class Replay:
         self.time: str|None = None
         self.score_id: int|None = None
         self.frames: list[ReplayFrame] = []
+        self.life_bar_graph: str|None = None
         
         meta = kwargs.get("meta", {})
         frames = kwargs.get("frames", [])
+        self.life_bar_graph = kwargs.get("life_bar_graph", None)
         
         for key, value in meta.items():
             setattr(self, key, value)
@@ -192,11 +197,9 @@ class Replay:
         pos += offset
 
         meta["life_bar_graph"] = life_bar_graph
-        print(f"Parsed meta: {meta}")
 
         length_data, offset = ints.decode(data[pos:])
         pos += offset
-        print(f"Compressed replay data length: {length_data} bytes")
         compressed_data = data[pos : pos + length_data]
         try:
             replay_data = lzma.decompress(
@@ -227,16 +230,14 @@ class Replay:
         for key, value in meta.items():
             setattr(self, key, value)
         frames = replay_data.split(",")
-        self.frames = [ReplayFrame(frame) for frame in frames]
+        print(f"Loaded {len(frames)} replay frames.")
+        print(f"First 5 frames: {frames[:5]}")
+        self.frames = [ReplayFrame(frame) for frame in frames[:-1]] # Empty frame at the end
 
     def check_meta(self):
         """Check the consistency of the replay meta data.
-
-        This method can be used to verify that the meta data fields are consistent with each other
-        (e.g., if the meta contains count_geki, then the mode should be standard, etc.).
-        It can also check for any missing or invalid fields in the meta data.
-
-        It should be called after loading the replay data or modifying any of the meta fields to ensure that the replay data is valid and consistent.
+        
+        It can only check for any missing fields in the meta data.
         """
         required_fields = [
             "mode",
@@ -256,12 +257,23 @@ class Replay:
             "mods",
             "time_tick",
             "score_id",
+            "life_bar_graph",
         ]
         for field in required_fields:
             if not hasattr(self, field) or getattr(self, field) is None:
                 raise ValueError(f"Missing required meta field: {field}")
 
-    def save_to_file(self, file_path: str):
+    def frames_to_str(self) -> str:
+        """Compress the replay frames into a string format suitable for saving to a .osr file.
+
+        Returns:
+            str: The compressed replay frames as a string.
+        """
+        if not self.frames:
+            return ""
+        return ",".join(f"{frame.time}|{frame.x}|{frame.y}|{frame.keys}" for frame in self.frames)
+
+    def save(self, file_path: str):
         """Save the replay data to a .osr file.
 
         Args:
@@ -269,6 +281,58 @@ class Replay:
         """
         # TODO: 实现将 Replay 对象重新打包成 .osr 文件的功能
         self.check_meta()
+        mode_b= cast(int, self.mode).to_bytes(1, byteorder="little", signed=False)
+        version_b = ints.encode(cast(int, self.version))
+        bm_hash_b = strings.encode(cast(str, self.beatmap_hash))
+        player_name_b = strings.encode(cast(str, self.player_name))
+        replay_hash_b = strings.encode(cast(str, self.replay_hash))
+        count_300_b = shorts.encode(cast(int, self.count_300))
+        count_100_b = shorts.encode(cast(int, self.count_100))
+        count_50_b = shorts.encode(cast(int, self.count_50))
+        count_geki_b = shorts.encode(cast(int, self.count_geki))
+        count_katu_b = shorts.encode(cast(int, self.count_katu))
+        count_miss_b = shorts.encode(cast(int, self.count_miss))
+        score_b = ints.encode(cast(int, self.score))
+        max_combo_b = shorts.encode(cast(int, self.max_combo))
+        perfect_b = (1 if self.perfect else 0).to_bytes(1, byteorder="little", signed=False)
         
-        raise NotImplementedError("Saving replay to file is not implemented yet.")
-        pass
+        mod_value = 0
+        for key, value in MODS.items():
+            if self.mods and key in self.mods:
+                mod_value |= value
+                break
+            
+        mod_b = ints.encode(mod_value)
+        life_bar_graph_b = strings.encode(cast(str, self.life_bar_graph))
+        time_tick_b = longs.encode(cast(int, self.time_tick))
+        
+        frames_str = self.frames_to_str()
+        compressed_frames = lzma.compress(frames_str.encode("utf-8"), format=lzma.FORMAT_ALONE)
+        length_b = ints.encode(len(compressed_frames))
+        
+        score_id_b = longs.encode(cast(int, self.score_id))
+        
+        bytes_data = (
+            mode_b
+            + version_b
+            + bm_hash_b
+            + player_name_b
+            + replay_hash_b
+            + count_300_b
+            + count_100_b
+            + count_50_b
+            + count_geki_b
+            + count_katu_b
+            + count_miss_b
+            + score_b
+            + max_combo_b
+            + perfect_b
+            + mod_b
+            + life_bar_graph_b
+            + time_tick_b
+            + length_b
+            + compressed_frames
+            + score_id_b
+        )
+        with open(file_path, "wb") as f:
+            f.write(bytes_data)
