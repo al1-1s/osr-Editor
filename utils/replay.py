@@ -60,7 +60,7 @@ class ReplayFrame:
 
     def __init__(self, frame: str):
         # w | x | y | z
-        print(f"Parsing frame: {frame}")
+        # print(f"Parsing frame: {frame}")
         w, x, y, z = frame.split("|")
         self.time_d = int(w)
         self.x = float(x)
@@ -341,7 +341,7 @@ class Replay:
         """
         if not self.frames:
             return ""
-        return ",".join(f"{frame.time}|{frame.x}|{frame.y}|{frame.keys}" for frame in self.frames)
+        return ",".join(f"{frame.time_d}|{frame.x}|{frame.y}|{frame.keys}" for frame in self.frames)
 
     def save(self, file_path: str):
         """Save the replay data to a .osr file.
