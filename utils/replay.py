@@ -42,27 +42,97 @@ MODS = {
 }
 MODE = {0: "std", 1: "taiko", 2: "catch", 3: "mania"}
 
+# Replay Action:
+# std: (x, y, keys, pressed)
+# taiko: (keys, pressed)
+# ctb: (x, dash)
+# mania: (lane, pressed/released)
+
+
 class ReplayFrame:
     """
     A class representing a single frame of replay data.
-    Each frame contains the following information:
-    - time: The timestamp of the frame in milliseconds from the previous frame.
-    - x: The x-coordinate of the cursor position (for std, ctb) or the lane index (for mania mode).
-    - y: The y-coordinate of the cursor position (only for std).
-    - keys: The bitfield representing the keys (including mouse buttons and keyboard keys) pressed (for std),or keys presses (for taiko), or dashing state (for ctb).
+    Detailed information about the frame is different between modes.
+    See subclasses for more details.
+    
+    You should not create ReplayFrame objects directly, but use the corresponding subclass based on the mode of the replay.
     """
 
     def __init__(self, frame: str):
         # w | x | y | z
         print(f"Parsing frame: {frame}")
         w, x, y, z = frame.split("|")
-        self.time = int(w)
+        self.time_d = int(w)
         self.x = float(x)
         self.y = float(y)
         self.keys = int(z)
-        # TODO: 解析 keys 位域，区分鼠标按键和键盘按键，并根据模式区分不同的按键含义
+        self.mode = "unknown"
         pass
+    
+class ReplayFrameStd(ReplayFrame):
+    """ 
+    A class representing a single frame of replay data for standard mode.
+    
+    The frame data is in the format of "time_d|x|y|keys", where:
+    - time_d: The time in milliseconds from the previous frame (delta time).
+    - x: The x-coordinate of the cursor position.
+    - y: The y-coordinate of the cursor position.
+    - keys: A bitfield representing the pressed keys (M1, M2, K1, K2).
+    """
+    def __init__(self, frame: str):
+        super().__init__(frame)
+        self.mode = "std"
+        
+class ReplayFrameTaiko(ReplayFrame):
+    """ 
+    A class representing a single frame of replay data for taiko mode.
+    
+    The frame data is in the format of "time_d|x|y|keys", where:
+    - time_d: The time in milliseconds from the previous frame (delta time).
+    - x: The x-coordinate of the cursor position (not used in taiko mode, always 0).
+    - y: The y-coordinate of the cursor position (not used in taiko mode, always 0).
+    - keys: A bitfield representing the pressed keys (LEFT-DON, LEFT-KAT, RIGHT-DON, RIGHT-KAT).
+    """
+    def __init__(self, frame: str):
+        super().__init__(frame)
+        self.mode = "taiko"
 
+class ReplayFrameCtb(ReplayFrame):
+    """ 
+    A class representing a single frame of replay data for catch the beat mode.
+    
+    The frame data is in the format of "time_d|x|y|keys", where:
+    - time_d: The time in milliseconds from the previous frame (delta time).
+    - x: The x-coordinate of the cursor position.
+    - y: The y-coordinate of the cursor position (not used in ctb mode, always 0).
+    - keys: A bitfield representing the pressed keys (DASH).
+
+    """
+    def __init__(self, frame: str):
+        super().__init__(frame)
+        self.mode = "ctb"
+
+class ReplayFrameMania(ReplayFrame):
+    """ 
+    A class representing a single frame of replay data for mania mode.
+    
+    The frame data is in the format of "time_d|x|y|keys", where:
+    - time_d: The time in milliseconds from the previous frame (delta time).
+    - x: The lane index (0-based) of the key press.
+    - y: The y-coordinate of the cursor position (not used in mania mode, always 0).
+    - keys: A bitfield representing the pressed keys (not used in mania mode, always 0).
+    """
+    def __init__(self, frame: str):
+        super().__init__(frame)
+        self.mode = "mania"
+
+class ReplayFrameDecoder:
+    # TODO: 实现一个 ReplayFrameDecoder 类，根据模式解析每一帧, 返回一个规范化的解析后的字典, 方便后续利用状态机进行状态转换和分析
+    pass
+
+class ReplayActionParser:
+    # TODO: 实现一个 ReplayActionParser 类，利用状态机解析每一帧的动作, 包括按键状态的变化, 鼠标位置的变化等, 以便后续进行分析和可视化
+    pass
 
 class Replay:
     def __init__(self, **kwargs):
