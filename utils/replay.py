@@ -273,7 +273,7 @@ class Replay:
             data (bytes): The byte sequence containing the replay data.
 
         Returns:
-            (replay_meta, life_bar_graph, replay_data) (tuple[dict, str, str]): A tuple containing the unpacked replay meta as a dictionary, the life bar graph as a string, and the unzipped replay data as a string.
+            (replay_meta, life_bar_graph, replay_data) (tuple[dict, str, str]): A tuple containing the unpacked replay meta as a dictionary, the raw life bar graph as a string, and the raw unzipped replay data as a string.
         """
 
         meta = {}
@@ -424,6 +424,46 @@ class Replay:
         frames = Replay.str_to_frames(replay_data, meta.get("mode", -1))
         self.frames = frames
 
+    def to_json(self) -> dict:
+        """Convert the Replay object into a JSON-serializable dictionary.
+
+        Returns:
+            dict: A dictionary containing the replay meta and frames data, suitable for JSON serialization.
+        """
+        return {
+            "meta": {
+                "mode": self.mode,
+                "version": self.version,
+                "beatmap_hash": self.beatmap_hash,
+                "player_name": self.player_name,
+                "replay_hash": self.replay_hash,
+                "count_300": self.count_300,
+                "count_100": self.count_100,
+                "count_50": self.count_50,
+                "count_geki": self.count_geki,
+                "count_katu": self.count_katu,
+                "count_miss": self.count_miss,
+                "score": self.score,
+                "max_combo": self.max_combo,
+                "perfect": self.perfect,
+                "mods": self.mods,
+                "time_tick": self.time_tick,
+                "time": self.time,
+                "score_id": self.score_id,
+            },
+            "frames": [
+                {
+                    "time_d": frame.time_d,
+                    "x": frame.x,
+                    "y": frame.y,
+                    "keys": frame.keys,
+                    "mode": frame.mode,
+                }
+                for frame in self.frames
+            ],
+            "life_bar_graph": self.life_bar_graph,
+        }
+
     def check_meta(self):
         """Check the consistency of the replay meta data.
 
@@ -507,6 +547,7 @@ class Replay:
         length_b = ints.encode(len(compressed_frames))
 
         score_id_b = longs.encode(cast(int, self.score_id))
+
 
         bytes_data = (
             mode_b
