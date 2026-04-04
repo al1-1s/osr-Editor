@@ -192,7 +192,7 @@ class Replay:
             data (bytes): The byte sequence containing the replay data.
 
         Returns:
-            (replay_meta, life_bar_graph, replay_data) (tuple[dict, str, str]): A tuple containing the unpacked replay meta as a dictionary, the life bar graph as a string, and the unzipped replay data as a string.
+            (replay_meta, life_bar_graph, replay_data) (tuple[dict, str, str]): A tuple containing the unpacked replay meta as a dictionary, the raw life bar graph as a string, and the raw unzipped replay data as a string.
         """
 
         meta = {}
