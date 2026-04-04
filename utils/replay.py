@@ -136,36 +136,48 @@ class ReplayActionParser:
 
 class Replay:
     def __init__(self, **kwargs):
-        self.mode: int|None = None
-        self.version: int|None = None
-        self.beatmap_hash: str|None = None
-        self.player_name: str|None = None
-        self.replay_hash: str|None = None
-        self.count_300: int|None = None
-        self.count_100: int|None = None
-        self.count_50: int|None = None
-        self.count_geki: int|None = None
-        self.count_katu: int|None = None
-        self.count_miss: int|None = None
-        self.score: int|None = None
-        self.max_combo: int|None = None
-        self.perfect: bool|None = None
-        self.mods: list[str]|None = None
-        self.time_tick: int|None = None
-        self.time: str|None = None
-        self.score_id: int|None = None
+        self.mode: int | None = None
+        self.version: int | None = None
+        self.beatmap_hash: str | None = None
+        self.player_name: str | None = None
+        self.replay_hash: str | None = None
+        self.count_300: int | None = None
+        self.count_100: int | None = None
+        self.count_50: int | None = None
+        self.count_geki: int | None = None
+        self.count_katu: int | None = None
+        self.count_miss: int | None = None
+        self.score: int | None = None
+        self.max_combo: int | None = None
+        self.perfect: bool | None = None
+        self.mods: list[str] | None = None
+        self.time_tick: int | None = None
+        self.time: str | None = None
+        self.score_id: int | None = None
         self.frames: list[ReplayFrame] = []
-        self.life_bar_graph: str|None = None
-        
+        self.life_bar_graph: str | None = None
+
         meta = kwargs.get("meta", {})
         frames = kwargs.get("frames", [])
         self.life_bar_graph = kwargs.get("life_bar_graph", None)
-        
+
         for key, value in meta.items():
             setattr(self, key, value)
         if len(frames) > 0 and isinstance(frames[0], str):
-            # If frames are provided as strings, we need to parse them into ReplayFrame objects
-            setattr(self, "frames", [ReplayFrame(frame) for frame in frames])
+            # Parse strings into ReplayFrame objects
+            self.check_meta()
+            match self.mode:
+                case 0:
+                    frame_class = ReplayFrameStd
+                case 1:
+                    frame_class = ReplayFrameTaiko
+                case 2:
+                    frame_class = ReplayFrameCtb
+                case 3:
+                    frame_class = ReplayFrameMania
+                case _:
+                    raise ValueError(f"Unsupported mode: {self.mode}")
+            setattr(self, "frames", [frame_class(frame) for frame in frames])
         else:
             self.frames = frames
 
@@ -182,7 +194,7 @@ class Replay:
         Returns:
             (replay_meta, life_bar_graph, replay_data) (tuple[dict, str, str]): A tuple containing the unpacked replay meta as a dictionary, the life bar graph as a string, and the unzipped replay data as a string.
         """
-        
+
         meta = {}
         pos = 0
 
@@ -288,6 +300,35 @@ class Replay:
 
         return meta, life_bar_graph, replay_data
 
+    @staticmethod
+    def str_to_frames(frames_str: str, mode: int) -> list[ReplayFrame]:
+        """Convert a string of replay frames into a list of ReplayFrame objects.
+
+        Args:
+            frames_str (str): The string containing the replay frames, where each frame is in the format of "time_d|x|y|keys" and frames are separated by commas.
+            mode (int): The game mode for which to parse the frames.
+
+        Returns:
+            list[ReplayFrame]: A list of ReplayFrame objects parsed from the input string.
+        """
+        if not frames_str:
+            return []
+        frame_strs = [
+            frame for frame in frames_str.split(",") if frame
+        ]  # Filter out possible empty strings
+        match mode:
+            case 0:
+                frame_class = ReplayFrameStd
+            case 1:
+                frame_class = ReplayFrameTaiko
+            case 2:
+                frame_class = ReplayFrameCtb
+            case 3:
+                frame_class = ReplayFrameMania
+            case _:
+                raise ValueError(f"Unsupported mode: {mode}")
+        return [frame_class(frame_str) for frame_str in frame_strs]
+
     def load(self, file_path: str):
         """Load replay data from a .osr file.
 
@@ -299,14 +340,12 @@ class Replay:
         meta, self.life_bar_graph, replay_data = self.unpack_osr(data)
         for key, value in meta.items():
             setattr(self, key, value)
-        frames = replay_data.split(",")
-        print(f"Loaded {len(frames)} replay frames.")
-        print(f"First 5 frames: {frames[:5]}")
-        self.frames = [ReplayFrame(frame) for frame in frames[:-1]] # Empty frame at the end
+        frames = Replay.str_to_frames(replay_data, meta.get("mode", -1))
+        self.frames = frames
 
     def check_meta(self):
         """Check the consistency of the replay meta data.
-        
+
         It can only check for any missing fields in the meta data.
         """
         required_fields = [
@@ -341,7 +380,10 @@ class Replay:
         """
         if not self.frames:
             return ""
-        return ",".join(f"{frame.time}|{frame.x}|{frame.y}|{frame.keys}" for frame in self.frames)
+        ret_str = ",".join(
+            f"{frame.time_d}|{frame.x}|{frame.y}|{frame.keys}" for frame in self.frames
+        )
+        return ret_str + ","  # Add a trailing comma to indicate the end of frames
 
     def save(self, file_path: str):
         """Save the replay data to a .osr file.
@@ -351,7 +393,7 @@ class Replay:
         """
         # TODO: 实现将 Replay 对象重新打包成 .osr 文件的功能
         self.check_meta()
-        mode_b= cast(int, self.mode).to_bytes(1, byteorder="little", signed=False)
+        mode_b = cast(int, self.mode).to_bytes(1, byteorder="little", signed=False)
         version_b = ints.encode(cast(int, self.version))
         bm_hash_b = strings.encode(cast(str, self.beatmap_hash))
         player_name_b = strings.encode(cast(str, self.player_name))
@@ -364,24 +406,27 @@ class Replay:
         count_miss_b = shorts.encode(cast(int, self.count_miss))
         score_b = ints.encode(cast(int, self.score))
         max_combo_b = shorts.encode(cast(int, self.max_combo))
-        perfect_b = (1 if self.perfect else 0).to_bytes(1, byteorder="little", signed=False)
-        
+        perfect_b = (1 if self.perfect else 0).to_bytes(
+            1, byteorder="little", signed=False
+        )
+
         mod_value = 0
         for key, value in MODS.items():
             if self.mods and key in self.mods:
                 mod_value |= value
-                break
-            
+
         mod_b = ints.encode(mod_value)
         life_bar_graph_b = strings.encode(cast(str, self.life_bar_graph))
         time_tick_b = longs.encode(cast(int, self.time_tick))
-        
+
         frames_str = self.frames_to_str()
-        compressed_frames = lzma.compress(frames_str.encode("utf-8"), format=lzma.FORMAT_ALONE)
+        compressed_frames = lzma.compress(
+            frames_str.encode("utf-8"), format=lzma.FORMAT_ALONE
+        )
         length_b = ints.encode(len(compressed_frames))
-        
+
         score_id_b = longs.encode(cast(int, self.score_id))
-        
+
         bytes_data = (
             mode_b
             + version_b
