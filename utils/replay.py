@@ -134,6 +134,7 @@ class ReplayFrameMania(ReplayFrame):
     def __init__(self, frame: str):
         super().__init__(frame)
         self.mode = "mania"
+        self.x = int(self.x)
 
 
 @dataclass
@@ -148,11 +149,11 @@ class FrameInfo:
 class FrameDecoder:
     """
     A class for decoding replay frames into a standardized format.
-    
-    You should create a new FrameDecoder object for each replay you want to decode. 
-    Or you need to call the reset() method to reset the internal time state before decoding a new replay. 
+
+    You should create a new FrameDecoder object for each replay you want to decode.
+    Or you need to call the reset() method to reset the internal time state before decoding a new replay.
     """
-    
+
     # TODO: 实现一个 FrameDecoder 类，根据模式解析每一帧, 返回一个规范化的解析后的字典 (FrameInfo), 方便后续利用状态机进行状态转换和分析
 
     def __init__(self) -> None:
@@ -160,9 +161,13 @@ class FrameDecoder:
 
     def reset(self) -> None:
         self.time = 0
-    
-    def decode(self, frame: ReplayFrame) -> FrameInfo:
+
+    def decode(self, frame: ReplayFrame) -> FrameInfo | None:
         mode = frame.mode
+        if frame.time_d < 0:
+            # End of the replay
+            return
+        
         self.time += frame.time_d
         match mode:
             case "std":
@@ -193,10 +198,9 @@ class FrameDecoder:
                 }
                 raw = frame
             case "mania":
+                assert isinstance(frame.x, int), f"Expected integer for frame.x, got {type(frame.x)}"
                 time_d = frame.time_d
-                state = {
-                    f"lane_{n}": bool(frame.keys & (1 << n)) for n in range(18)
-                }
+                state = {f"lane_{n}": bool(frame.x & (1 << n)) for n in range(18)}
                 raw = frame
             case _:
                 raise ValueError(f"Unsupported mode: {mode}")
@@ -390,7 +394,9 @@ class Replay:
         """
         if not frames_str:
             return []
-        frame_strs = [frame for frame in frames_str.split(",") if frame] # Filter out possible empty strings
+        frame_strs = [
+            frame for frame in frames_str.split(",") if frame
+        ]  # Filter out possible empty strings
         match mode:
             case 0:
                 frame_class = ReplayFrameStd
@@ -417,7 +423,6 @@ class Replay:
             setattr(self, key, value)
         frames = Replay.str_to_frames(replay_data, meta.get("mode", -1))
         self.frames = frames
-
 
     def check_meta(self):
         """Check the consistency of the replay meta data.
