@@ -561,7 +561,6 @@ class Replay:
             frame_info = self.frame_decoder.decode(frame)
             if frame_info is not None:
                 frame_infos.append(frame_info)
-        frame_infos.sort(key=lambda x: x.time_abs)
         return frame_infos
 
     def parse_actions(self) -> list[Action]:
