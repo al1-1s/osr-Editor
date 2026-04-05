@@ -1,9 +1,9 @@
 """Replay related classes"""
 
-from typing import cast
-
-from utils.data import *
 import lzma
+from dataclasses import dataclass
+from typing import cast
+from utils.data import *
 from utils.tick2date import dotnet_ticks_to_datetime
 
 MODS = {
@@ -40,13 +40,26 @@ MODS = {
     "ScoreV2": 1 << 29,
     "Mirror": 1 << 30,
 }
-MODE = {0: "std", 1: "taiko", 2: "catch", 3: "mania"}
+MODE = {0: "std", 1: "taiko", 2: "ctb", 3: "mania"}
 
-# Replay Action:
-# std: (x, y, keys, pressed)
-# taiko: (keys, pressed)
-# ctb: (x, dash)
-# mania: (lane, pressed/released)
+# FrameInfo format:
+# FrameInfo(time_abs, time_d, mode, key_data, cursor_data, raw)
+#
+# `key_data` is a dict of input names to pressed-state booleans.
+# `cursor_data` is either a dict containing cursor-related data for the mode, or None.
+#
+# std:
+#   key_data   = {"M1": bool, "M2": bool, "K1": bool, "K2": bool}
+#   cursor_data = {"x": float, "y": float}
+# taiko:
+#   key_data   = {"LEFT-DON": bool, "LEFT-KAT": bool, "RIGHT-DON": bool, "RIGHT-KAT": bool}
+#   cursor_data = None
+# ctb:
+#   key_data   = {"DASH": bool}
+#   cursor_data = {"x": float}
+# mania:
+#   key_data   = {"lane_0": bool, ..., "lane_17": bool}
+#   cursor_data = None
 
 
 class ReplayFrame:
@@ -54,13 +67,13 @@ class ReplayFrame:
     A class representing a single frame of replay data.
     Detailed information about the frame is different between modes.
     See subclasses for more details.
-    
+
     You should not create ReplayFrame objects directly, but use the corresponding subclass based on the mode of the replay.
     """
 
     def __init__(self, frame: str):
         # w | x | y | z
-        print(f"Parsing frame: {frame}")
+        # print(f"Parsing frame: {frame}")
         w, x, y, z = frame.split("|")
         self.time_d = int(w)
         self.x = float(x)
@@ -68,39 +81,44 @@ class ReplayFrame:
         self.keys = int(z)
         self.mode = "unknown"
         pass
-    
+
+
 class ReplayFrameStd(ReplayFrame):
-    """ 
+    """
     A class representing a single frame of replay data for standard mode.
-    
+
     The frame data is in the format of "time_d|x|y|keys", where:
     - time_d: The time in milliseconds from the previous frame (delta time).
     - x: The x-coordinate of the cursor position.
     - y: The y-coordinate of the cursor position.
     - keys: A bitfield representing the pressed keys (M1, M2, K1, K2).
     """
+
     def __init__(self, frame: str):
         super().__init__(frame)
         self.mode = "std"
-        
+
+
 class ReplayFrameTaiko(ReplayFrame):
-    """ 
+    """
     A class representing a single frame of replay data for taiko mode.
-    
+
     The frame data is in the format of "time_d|x|y|keys", where:
     - time_d: The time in milliseconds from the previous frame (delta time).
     - x: The x-coordinate of the cursor position (not used in taiko mode, always 0).
     - y: The y-coordinate of the cursor position (not used in taiko mode, always 0).
     - keys: A bitfield representing the pressed keys (LEFT-DON, LEFT-KAT, RIGHT-DON, RIGHT-KAT).
     """
+
     def __init__(self, frame: str):
         super().__init__(frame)
         self.mode = "taiko"
 
+
 class ReplayFrameCtb(ReplayFrame):
-    """ 
+    """
     A class representing a single frame of replay data for catch the beat mode.
-    
+
     The frame data is in the format of "time_d|x|y|keys", where:
     - time_d: The time in milliseconds from the previous frame (delta time).
     - x: The x-coordinate of the cursor position.
@@ -108,31 +126,168 @@ class ReplayFrameCtb(ReplayFrame):
     - keys: A bitfield representing the pressed keys (DASH).
 
     """
+
     def __init__(self, frame: str):
         super().__init__(frame)
         self.mode = "ctb"
 
+
 class ReplayFrameMania(ReplayFrame):
-    """ 
+    """
     A class representing a single frame of replay data for mania mode.
-    
+
     The frame data is in the format of "time_d|x|y|keys", where:
     - time_d: The time in milliseconds from the previous frame (delta time).
     - x: The lane index (0-based) of the key press.
     - y: The y-coordinate of the cursor position (not used in mania mode, always 0).
     - keys: A bitfield representing the pressed keys (not used in mania mode, always 0).
     """
+
     def __init__(self, frame: str):
         super().__init__(frame)
         self.mode = "mania"
+        self.x = int(self.x)
 
-class ReplayFrameDecoder:
-    # TODO: 实现一个 ReplayFrameDecoder 类，根据模式解析每一帧, 返回一个规范化的解析后的字典, 方便后续利用状态机进行状态转换和分析
-    pass
 
-class ReplayActionParser:
-    # TODO: 实现一个 ReplayActionParser 类，利用状态机解析每一帧的动作, 包括按键状态的变化, 鼠标位置的变化等, 以便后续进行分析和可视化
-    pass
+@dataclass
+class FrameInfo:
+    time_abs: int
+    time_d: int
+    mode: str
+    key_data: dict
+    cursor_data: dict | None
+    raw: ReplayFrame
+
+
+class FrameDecoder:
+    """
+    A class for decoding replay frames into a standardized format.
+
+    You should create a new FrameDecoder object for each replay you want to decode.
+    Or you need to call the reset() method to reset the internal time state before decoding a new replay.
+    """
+
+    def __init__(self) -> None:
+        self.time = 0  # used to keep track of the absolute time of the replay frames.
+
+    def reset(self) -> None:
+        self.time = 0
+
+    def decode(self, frame: ReplayFrame) -> FrameInfo | None:
+
+        mode = frame.mode
+        if frame.time_d < 0:
+            # End of the replay
+            return
+
+        self.time += frame.time_d
+        match mode:
+            case "std":
+                time_d = frame.time_d
+                cursor_data = {"x": frame.x, "y": frame.y}
+                key_data = {
+                    "M1": bool(frame.keys & 1),
+                    "M2": bool(frame.keys & 2),
+                    "K1": bool(frame.keys & 4),
+                    "K2": bool(frame.keys & 8),
+                }
+                raw = frame
+            case "taiko":
+                time_d = frame.time_d
+                cursor_data = None
+                key_data = {
+                    "LEFT-DON": bool(frame.keys & 1),
+                    "LEFT-KAT": bool(frame.keys & 2),
+                    "RIGHT-DON": bool(frame.keys & 4),
+                    "RIGHT-KAT": bool(frame.keys & 8),
+                }
+                raw = frame
+            case "ctb":
+                time_d = frame.time_d
+                cursor_data = {"x": frame.x, "y": 0}
+                key_data = {
+                    "DASH": bool(frame.keys & 1),
+                }
+                raw = frame
+            case "mania":
+                if not isinstance(frame.x, int):
+                    raise TypeError(
+                        f"Expected integer for frame.x, got {type(frame.x)}"
+                    )
+                time_d = frame.time_d
+                key_data = {f"lane_{n}": bool(frame.x & (1 << n)) for n in range(18)}
+                cursor_data = None
+                raw = frame
+            case _:
+                raise ValueError(f"Unsupported mode: {mode}")
+
+        return FrameInfo(
+            time_abs=self.time,
+            time_d=time_d,
+            mode=mode,
+            key_data=key_data,
+            cursor_data=cursor_data,
+            raw=raw,
+        )
+
+
+@dataclass
+class Action:
+    time: int
+    key: str  # e.g. "M1", "LEFT-DON", "lane_0"
+    action: str
+    cursor_x: float | None
+    cursor_y: float | None
+
+
+class ActionParser:
+    """
+    A class for parsing replay frame info into a readable action format.
+
+    You should create a new ActionParser object for each frame series you want to parse.
+    Or you need to call the reset() method to reset the internal action list before parsing a new frame series.
+    """
+
+    def __init__(self) -> None:
+        self.actions: list[Action] = []
+
+    def reset(self) -> None:
+        self.actions = []
+
+    def parse(self, frames_info: list[FrameInfo]) -> list[Action]:
+
+        curr = 1
+        prev = 0  # First frame is always the initial state (0|0|0|0)
+
+        while True:
+            if curr >= len(frames_info):
+                break
+            prev_frame = frames_info[prev]
+            curr_frame = frames_info[curr]
+            for key in prev_frame.key_data.keys():
+                if prev_frame.key_data[key] != curr_frame.key_data[key]:
+                    action_type = "press" if curr_frame.key_data[key] else "release"
+                    action = Action(
+                        time=curr_frame.time_abs,
+                        key=key,
+                        action=action_type,
+                        cursor_x=(
+                            curr_frame.cursor_data["x"]
+                            if curr_frame.cursor_data and "x" in curr_frame.cursor_data
+                            else None
+                        ),
+                        cursor_y=(
+                            curr_frame.cursor_data["y"]
+                            if curr_frame.cursor_data and "y" in curr_frame.cursor_data
+                            else None
+                        ),
+                    )
+                    self.actions.append(action)
+            prev += 1
+            curr += 1
+
+        return self.actions
+
 
 class Replay:
     def __init__(self, **kwargs):
@@ -155,6 +310,10 @@ class Replay:
         self.time: str | None = None
         self.score_id: int | None = None
         self.frames: list[ReplayFrame] = []
+        self.frames_info: list[FrameInfo] = []
+        self.frame_decoder = FrameDecoder()
+        self.action_parser = ActionParser()
+        self.actions: list[Action] = []
         self.life_bar_graph: str | None = None
 
         meta = kwargs.get("meta", {})
@@ -180,6 +339,9 @@ class Replay:
             setattr(self, "frames", [frame_class(frame) for frame in frames])
         else:
             self.frames = frames
+
+        self.frames_info = self.decode_frames()
+        self.actions = self.parse_actions()
 
     def __str__(self):
         return f"Replay(player_name={getattr(self, 'player_name', 'unknown')}, beatmap_hash={getattr(self, 'beatmap_hash', 'unknown')}, score={getattr(self, 'score', 0)}, max_combo={getattr(self, 'max_combo', 0)}, mods={getattr(self, 'mods', 0)}, time={getattr(self, 'time', 'unknown')})"
@@ -342,6 +504,8 @@ class Replay:
             setattr(self, key, value)
         frames = Replay.str_to_frames(replay_data, meta.get("mode", -1))
         self.frames = frames
+        self.frames_info = self.decode_frames()
+        self.actions = self.parse_actions()
 
     def to_json(self) -> dict:
         """Convert the Replay object into a JSON-serializable dictionary.
@@ -382,6 +546,28 @@ class Replay:
             ],
             "life_bar_graph": self.life_bar_graph,
         }
+
+    def decode_frames(self) -> list[FrameInfo]:
+        """Decode the replay frames into a list of FrameInfo objects.
+
+        Returns:
+            list[FrameInfo]: A list of FrameInfo objects containing the decoded information of each frame.
+        """
+        self.frame_decoder.reset()
+        if not self.frames:
+            return []
+        frame_infos: list[FrameInfo] = []
+        for frame in self.frames:
+            frame_info = self.frame_decoder.decode(frame)
+            if frame_info is not None:
+                frame_infos.append(frame_info)
+        return frame_infos
+
+    def parse_actions(self) -> list[Action]:
+        self.action_parser.reset()
+        if not self.frames_info:
+            return []
+        return self.action_parser.parse(self.frames_info)
 
     def check_meta(self):
         """Check the consistency of the replay meta data.
