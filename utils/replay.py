@@ -214,8 +214,8 @@ class Action:
     time: int
     key: str # e.g. "M1", "LEFT-DON", "lane_0"
     action: str
-    cursor_x: float | None = None
-    cursor_y: float | None = None
+    cursor_x: float | None
+    cursor_y: float | None
 
 
 class ActionParser:
