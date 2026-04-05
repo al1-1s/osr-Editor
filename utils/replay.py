@@ -210,9 +210,10 @@ class FrameDecoder:
                 }
                 raw = frame
             case "mania":
-                assert isinstance(
-                    frame.x, int
-                ), f"Expected integer for frame.x, got {type(frame.x)}"
+                if not isinstance(frame.x, int):
+                    raise TypeError(
+                        f"Expected integer for frame.x, got {type(frame.x)}"
+                    )
                 time_d = frame.time_d
                 key_data = {f"lane_{n}": bool(frame.x & (1 << n)) for n in range(18)}
                 cursor_data = None
