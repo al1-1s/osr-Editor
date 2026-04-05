@@ -567,9 +567,7 @@ class Replay:
         self.action_parser.reset()
         if not self.frames_info:
             return []
-        actions = self.action_parser.parse(self.frames_info)
-        actions.sort(key=lambda x: x.time)
-        return actions
+        return self.action_parser.parse(self.frames_info)
 
     def check_meta(self):
         """Check the consistency of the replay meta data.
