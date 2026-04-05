@@ -155,16 +155,13 @@ class FrameDecoder:
     Or you need to call the reset() method to reset the internal time state before decoding a new replay.
     """
 
-    def __init__(self, auto_reset: bool = True) -> None:
+    def __init__(self) -> None:
         self.time = 0  # used to keep track of the absolute time of the replay frames.
-        self.auto_reset = auto_reset
 
     def reset(self) -> None:
         self.time = 0
 
     def decode(self, frame: ReplayFrame) -> FrameInfo | None:
-        if self.auto_reset and self.time == 0:
-            self.reset()
 
         mode = frame.mode
         if frame.time_d < 0:
@@ -238,16 +235,13 @@ class ActionParser:
     Or you need to call the reset() method to reset the internal action list before parsing a new frame series.
     """
 
-    def __init__(self, auto_reset: bool = True) -> None:
+    def __init__(self) -> None:
         self.actions: list[Action] = []
-        self.auto_reset = auto_reset
 
     def reset(self) -> None:
         self.actions = []
 
     def parse(self, frames_info: list[FrameInfo]) -> list[Action]:
-        if self.auto_reset:
-            self.reset()
 
         curr = 1
         prev = 0  # First frame is always the initial state (0|0|0|0)
