@@ -155,18 +155,22 @@ class FrameDecoder:
     Or you need to call the reset() method to reset the internal time state before decoding a new replay.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, auto_reset: bool = True) -> None:
         self.time = 0  # used to keep track of the absolute time of the replay frames.
+        self.auto_reset = auto_reset
 
     def reset(self) -> None:
         self.time = 0
 
     def decode(self, frame: ReplayFrame) -> FrameInfo | None:
+        if self.auto_reset and self.time == 0:
+            self.reset()
+
         mode = frame.mode
         if frame.time_d < 0:
             # End of the replay
             return
-        
+
         self.time += frame.time_d
         match mode:
             case "std":
@@ -197,7 +201,9 @@ class FrameDecoder:
                 }
                 raw = frame
             case "mania":
-                assert isinstance(frame.x, int), f"Expected integer for frame.x, got {type(frame.x)}"
+                assert isinstance(
+                    frame.x, int
+                ), f"Expected integer for frame.x, got {type(frame.x)}"
                 time_d = frame.time_d
                 key_data = {f"lane_{n}": bool(frame.x & (1 << n)) for n in range(18)}
                 cursor_data = None
@@ -206,33 +212,51 @@ class FrameDecoder:
                 raise ValueError(f"Unsupported mode: {mode}")
 
         return FrameInfo(
-            time_abs=self.time, time_d=time_d, mode=mode, key_data=key_data, cursor_data=cursor_data, raw=raw
+            time_abs=self.time,
+            time_d=time_d,
+            mode=mode,
+            key_data=key_data,
+            cursor_data=cursor_data,
+            raw=raw,
         )
+
 
 @dataclass
 class Action:
     time: int
-    key: str # e.g. "M1", "LEFT-DON", "lane_0"
+    key: str  # e.g. "M1", "LEFT-DON", "lane_0"
     action: str
     cursor_x: float | None
     cursor_y: float | None
 
 
 class ActionParser:
-    # TODO: 实现一个 ActionParser 类，利用状态机解析每一帧的动作, 包括按键状态的变化, 鼠标位置的变化等, 以便后续进行分析和可视化
-    def __init__(self, frames_info: list[FrameInfo]) -> None:
-        self.frames_info = frames_info
+    """
+    A class for parsing replay frame info into a readable action format.
+
+    You should create a new ActionParser object for each frame series you want to parse.
+    Or you need to call the reset() method to reset the internal action list before parsing a new frame series.
+    """
+
+    def __init__(self, auto_reset: bool = True) -> None:
         self.actions: list[Action] = []
-        
-    def parse(self) -> list[Action]:
+        self.auto_reset = auto_reset
+
+    def reset(self) -> None:
+        self.actions = []
+
+    def parse(self, frames_info: list[FrameInfo]) -> list[Action]:
+        if self.auto_reset:
+            self.reset()
+
         curr = 1
-        prev = 0
-        
+        prev = 0  # First frame is always the initial state (0|0|0|0)
+
         while True:
-            if curr >= len(self.frames_info):
+            if curr >= len(frames_info):
                 break
-            prev_frame = self.frames_info[prev]
-            curr_frame = self.frames_info[curr]
+            prev_frame = frames_info[prev]
+            curr_frame = frames_info[curr]
             for key in prev_frame.key_data.keys():
                 if prev_frame.key_data[key] != curr_frame.key_data[key]:
                     action_type = "press" if curr_frame.key_data[key] else "release"
@@ -240,15 +264,22 @@ class ActionParser:
                         time=curr_frame.time_abs,
                         key=key,
                         action=action_type,
-                        cursor_x=curr_frame.cursor_data["x"] if curr_frame.cursor_data and "x" in curr_frame.cursor_data else None,
-                        cursor_y=curr_frame.cursor_data["y"] if curr_frame.cursor_data and "y" in curr_frame.cursor_data else None,
+                        cursor_x=(
+                            curr_frame.cursor_data["x"]
+                            if curr_frame.cursor_data and "x" in curr_frame.cursor_data
+                            else None
+                        ),
+                        cursor_y=(
+                            curr_frame.cursor_data["y"]
+                            if curr_frame.cursor_data and "y" in curr_frame.cursor_data
+                            else None
+                        ),
                     )
                     self.actions.append(action)
             prev += 1
             curr += 1
-        
+
         return self.actions
-        
 
 
 class Replay:
@@ -274,6 +305,8 @@ class Replay:
         self.frames: list[ReplayFrame] = []
         self.frames_info: list[FrameInfo] = []
         self.frame_decoder = FrameDecoder()
+        self.action_parser = ActionParser()
+        self.actions: list[Action] = []
         self.life_bar_graph: str | None = None
 
         meta = kwargs.get("meta", {})
@@ -299,8 +332,9 @@ class Replay:
             setattr(self, "frames", [frame_class(frame) for frame in frames])
         else:
             self.frames = frames
-        
-        self.frames_info = self.decode_frames(self.frames[0]) if self.frames else []
+
+        self.frames_info = self.decode_frames()
+        self.actions = self.parse_actions()
 
     def __str__(self):
         return f"Replay(player_name={getattr(self, 'player_name', 'unknown')}, beatmap_hash={getattr(self, 'beatmap_hash', 'unknown')}, score={getattr(self, 'score', 0)}, max_combo={getattr(self, 'max_combo', 0)}, mods={getattr(self, 'mods', 0)}, time={getattr(self, 'time', 'unknown')})"
@@ -463,7 +497,8 @@ class Replay:
             setattr(self, key, value)
         frames = Replay.str_to_frames(replay_data, meta.get("mode", -1))
         self.frames = frames
-        self.frames_info = self.decode_frames(self.frames[0]) if self.frames else []
+        self.frames_info = self.decode_frames()
+        self.actions = self.parse_actions()
 
     def to_json(self) -> dict:
         """Convert the Replay object into a JSON-serializable dictionary.
@@ -505,21 +540,30 @@ class Replay:
             "life_bar_graph": self.life_bar_graph,
         }
 
-    def decode_frames(self, frame: ReplayFrame) -> list[FrameInfo]:
+    def decode_frames(self) -> list[FrameInfo]:
         """Decode the replay frames into a list of FrameInfo objects.
 
         Returns:
             list[FrameInfo]: A list of FrameInfo objects containing the decoded information of each frame.
         """
+        self.frame_decoder.reset()
         if not self.frames:
             return []
-        frame_infos : list[FrameInfo] = []
+        frame_infos: list[FrameInfo] = []
         for frame in self.frames:
             frame_info = self.frame_decoder.decode(frame)
             if frame_info is not None:
                 frame_infos.append(frame_info)
         frame_infos.sort(key=lambda x: x.time_abs)
         return frame_infos
+
+    def parse_actions(self) -> list[Action]:
+        self.action_parser.reset()
+        if not self.frames_info:
+            return []
+        actions = self.action_parser.parse(self.frames_info)
+        actions.sort(key=lambda x: x.time)
+        return actions
 
     def check_meta(self):
         """Check the consistency of the replay meta data.
@@ -604,7 +648,6 @@ class Replay:
         length_b = ints.encode(len(compressed_frames))
 
         score_id_b = longs.encode(cast(int, self.score_id))
-
 
         bytes_data = (
             mode_b
