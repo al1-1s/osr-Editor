@@ -4,7 +4,7 @@ from tkinter import filedialog
 import json
 import os
 from datetime import datetime
-from utils.replay import Replay
+from osreditor.replay import Replay
 
 def select_file():
     root = tk.Tk()

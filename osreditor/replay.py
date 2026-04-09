@@ -3,8 +3,8 @@
 import lzma
 from dataclasses import dataclass
 from typing import cast
-from utils.data import *
-from utils.tick2date import dotnet_ticks_to_datetime
+from osreditor.data import *
+from osreditor.utils.tick2date import dotnet_ticks_to_datetime
 
 MODS = {
     "None": 0,

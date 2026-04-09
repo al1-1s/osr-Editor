@@ -1,4 +1,5 @@
-from utils import *
+from osreditor.data import *
+from osreditor.utils.tick2date import dotnet_ticks_to_datetime
 import lzma
 
 MODE = {
