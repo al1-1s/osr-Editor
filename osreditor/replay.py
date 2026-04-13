@@ -43,26 +43,6 @@ MODS = {
 MODE = {0: "std", 1: "taiko", 2: "ctb", 3: "mania"}
 
 
-# FrameInfo format:
-# FrameInfo(time_abs, time_d, mode, key_data, cursor_data, raw)
-#
-# `key_data` is a dict of input names to pressed-state booleans.
-# `cursor_data` is either a dict containing cursor-related data for the mode, or None.
-#
-# std:
-#   key_data   = {"M1": bool, "M2": bool, "K1": bool, "K2": bool}
-#   cursor_data = {"x": float, "y": float}
-# taiko:
-#   key_data   = {"LEFT-DON": bool, "LEFT-KAT": bool, "RIGHT-DON": bool, "RIGHT-KAT": bool}
-#   cursor_data = None
-# ctb:
-#   key_data   = {"DASH": bool}
-#   cursor_data = {"x": float}
-# mania:
-#   key_data   = {"lane_0": bool, ..., "lane_17": bool}
-#   cursor_data = None
-
-
 class ReplayFrame:
     """
     A class representing a single frame of replay data.
@@ -152,6 +132,26 @@ class ReplayFrameMania(ReplayFrame):
 
 @dataclass
 class FrameInfo:
+    """
+    FrameInfo format:
+    FrameInfo(time_abs, time_d, mode, key_data, cursor_data, raw)
+    
+    `key_data` is a dict of input names to pressed-state booleans.
+    `cursor_data` is either a dict containing cursor-related data for the mode, or None.
+    
+    std:
+      key_data   = {"M1": bool, "M2": bool, "K1": bool, "K2": bool}
+      cursor_data = {"x": float, "y": float}
+    taiko:
+      key_data   = {"LEFT-DON": bool, "LEFT-KAT": bool, "RIGHT-DON": bool, "RIGHT-KAT": bool}
+      cursor_data = None
+    ctb:
+      key_data   = {"DASH": bool}
+      cursor_data = {"x": float}
+    mania:
+      key_data   = {"lane_0": bool, ..., "lane_17": bool}
+    """
+    cursor_data = None
     time_abs: int
     time_d: int
     mode: str
