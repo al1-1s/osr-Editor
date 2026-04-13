@@ -1,7 +1,7 @@
 """Replay related classes"""
 
 import lzma
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import cast
 from osreditor.data import *
 from osreditor.utils.tick2date import dotnet_ticks_to_datetime
@@ -41,6 +41,7 @@ MODS = {
     "Mirror": 1 << 30,
 }
 MODE = {0: "std", 1: "taiko", 2: "ctb", 3: "mania"}
+
 
 # FrameInfo format:
 # FrameInfo(time_abs, time_d, mode, key_data, cursor_data, raw)
@@ -288,60 +289,57 @@ class ActionParser:
 
         return self.actions
 
-
+@dataclass
 class Replay:
-    def __init__(self, **kwargs):
-        self.mode: int | None = None
-        self.version: int | None = None
-        self.beatmap_hash: str | None = None
-        self.player_name: str | None = None
-        self.replay_hash: str | None = None
-        self.count_300: int | None = None
-        self.count_100: int | None = None
-        self.count_50: int | None = None
-        self.count_geki: int | None = None
-        self.count_katu: int | None = None
-        self.count_miss: int | None = None
-        self.score: int | None = None
-        self.max_combo: int | None = None
-        self.perfect: bool | None = None
-        self.mods: list[str] | None = None
-        self.time_tick: int | None = None
-        self.time: str | None = None
-        self.score_id: int | None = None
-        self.frames: list[ReplayFrame] = []
-        self.frames_info: list[FrameInfo] = []
-        self.frame_decoder = FrameDecoder()
-        self.action_parser = ActionParser()
-        self.actions: list[Action] = []
-        self.life_bar_graph: str | None = None
+    FRAME_CLASS = {
+    0: ReplayFrameStd,
+    1: ReplayFrameTaiko,
+    2: ReplayFrameCtb,
+    3: ReplayFrameMania,
+    }
+    mode: int | None = None
+    version: int | None = None
+    beatmap_hash: str | None = None
+    player_name: str | None = None
+    replay_hash: str | None = None
+    count_300: int | None = None
+    count_100: int | None = None
+    count_50: int | None = None
+    count_geki: int | None = None
+    count_katu: int | None = None
+    count_miss: int | None = None
+    score: int | None = None
+    max_combo: int | None = None
+    perfect: bool | None = None
+    mods: list[str] | None = None
+    time_tick: int | None = None
+    time: str | None = None
+    score_id: int | None = None
+    frames: list[ReplayFrame] = field(default_factory=list)
+    frames_info: list[FrameInfo] = field(default_factory=list)
+    actions: list[Action] = field(default_factory=list)
+    life_bar_graph: str | None = None
+    action_parser: ActionParser = field(default_factory=ActionParser)
+    frame_decoder: FrameDecoder = field(default_factory=FrameDecoder)
+    
 
-        meta = kwargs.get("meta", {})
-        frames = kwargs.get("frames", [])
-        self.life_bar_graph = kwargs.get("life_bar_graph", None)
-
-        for key, value in meta.items():
-            setattr(self, key, value)
-        if len(frames) > 0 and isinstance(frames[0], str):
-            # Parse strings into ReplayFrame objects
-            self.check_meta()
-            match self.mode:
-                case 0:
-                    frame_class = ReplayFrameStd
-                case 1:
-                    frame_class = ReplayFrameTaiko
-                case 2:
-                    frame_class = ReplayFrameCtb
-                case 3:
-                    frame_class = ReplayFrameMania
-                case _:
-                    raise ValueError(f"Unsupported mode: {self.mode}")
-            setattr(self, "frames", [frame_class(frame) for frame in frames])
-        else:
-            self.frames = frames
-
-        self.frames_info = self.decode_frames()
-        self.actions = self.parse_actions()
+    @classmethod
+    def from_file(cls, file_path: str) -> "Replay":
+        with open(file_path, "rb") as f:
+            data = f.read()
+        meta, life_bar_graph, replay_data = cls.unpack_osr(data)
+        frames = Replay.str_to_frames(replay_data, meta.get("mode", -1))
+        return cls.from_meta(meta, frames, life_bar_graph)
+        
+    @classmethod
+    def from_meta(cls, meta: dict, frames: list[ReplayFrame], life_bar_graph: str):
+        instance = cls(frames=frames, life_bar_graph=life_bar_graph)
+        if meta:
+            for key, value in meta.items():
+                if hasattr(instance, key):
+                    setattr(instance, key, value)
+        instance.build()
+        return instance
 
     def __str__(self):
         return f"Replay(player_name={getattr(self, 'player_name', 'unknown')}, beatmap_hash={getattr(self, 'beatmap_hash', 'unknown')}, score={getattr(self, 'score', 0)}, max_combo={getattr(self, 'max_combo', 0)}, mods={getattr(self, 'mods', 0)}, time={getattr(self, 'time', 'unknown')})"
@@ -478,34 +476,10 @@ class Replay:
         frame_strs = [
             frame for frame in frames_str.split(",") if frame
         ]  # Filter out possible empty strings
-        match mode:
-            case 0:
-                frame_class = ReplayFrameStd
-            case 1:
-                frame_class = ReplayFrameTaiko
-            case 2:
-                frame_class = ReplayFrameCtb
-            case 3:
-                frame_class = ReplayFrameMania
-            case _:
-                raise ValueError(f"Unsupported mode: {mode}")
+        frame_class = Replay.FRAME_CLASS.get(mode)
+        if frame_class is None:
+            raise ValueError(f"Unsupported mode: {mode}")
         return [frame_class(frame_str) for frame_str in frame_strs]
-
-    def load(self, file_path: str):
-        """Load replay data from a .osr file.
-
-        Args:
-            file_path (str): The path to the .osr replay file.
-        """
-        with open(file_path, "rb") as f:
-            data = f.read()
-        meta, self.life_bar_graph, replay_data = self.unpack_osr(data)
-        for key, value in meta.items():
-            setattr(self, key, value)
-        frames = Replay.str_to_frames(replay_data, meta.get("mode", -1))
-        self.frames = frames
-        self.frames_info = self.decode_frames()
-        self.actions = self.parse_actions()
 
     def to_json(self) -> dict:
         """Convert the Replay object into a JSON-serializable dictionary.
@@ -534,17 +508,17 @@ class Replay:
                 "time": self.time,
                 "score_id": self.score_id,
             },
-            "frames": [
-                {
-                    "time_d": frame.time_d,
-                    "x": frame.x,
-                    "y": frame.y,
-                    "keys": frame.keys,
-                    "mode": frame.mode,
-                }
-                for frame in self.frames
-            ],
-            "life_bar_graph": self.life_bar_graph,
+            # "frames": [
+            #     {
+            #         "time_d": frame.time_d,
+            #         "x": frame.x,
+            #         "y": frame.y,
+            #         "keys": frame.keys,
+            #         "mode": frame.mode,
+            #     }
+            #     for frame in self.frames
+            # ],
+            # "life_bar_graph": self.life_bar_graph,
         }
 
     def decode_frames(self) -> list[FrameInfo]:
@@ -569,6 +543,10 @@ class Replay:
             return []
         return self.action_parser.parse(self.frames_info)
 
+    def build(self):
+        self.frames_info = self.decode_frames()
+        self.actions = self.parse_actions()
+    
     def check_meta(self):
         """Check the consistency of the replay meta data.
 
