@@ -187,10 +187,3 @@ class Beatmap:
                     payload = ObjectParser.parse(raw)
                     hitobjects.append(HitObject(raw, payload))
         return meta, hitobjects
-
-
-if __name__ == "__main__":
-    meta, _ = Beatmap.unpack_osu(
-        r"test\Us4KKi - Aria for Lepus (Arisu Tendou) [save].osu"
-    )
-    print(meta)
