@@ -151,7 +151,6 @@ class FrameInfo:
     mania:
       key_data   = {"lane_0": bool, ..., "lane_17": bool}
     """
-    cursor_data = None
     time_abs: int
     time_d: int
     mode: str
