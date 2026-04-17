@@ -247,7 +247,7 @@ class Beatmap:
                     try:
                         payload = ObjectParser.parse(raw)
                     except ValueError as e:
-                        raise ValueError(f"Warning: {e} Skipping hit object: {line}")
+                        raise ValueError(f"Error when parsing hit object {line}: {e}")
 
                     hitobjects.append(HitObject(raw, payload))
         return meta, hitobjects

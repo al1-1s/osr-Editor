@@ -20,8 +20,9 @@ class BeatmapPreviewer:
     PADDING = 5  # padding on the sides of the preview image
     LANE_SPACING = 2  # spacing between lanes
     MAX_COLUMN_HEIGHT = 5000  # maximum height of each column
-    COLUMN_SPACING = 8  # spacing between columns
+    COLUMN_SPACING = 80  # spacing between columns
     SPLIT_LINE_WEIGHT = 2  # weight of the split line between columns
+    VERTICAL_OFFSET = 2  # vertical offset to prevent hit objects from touching the bottom edge of the image
 
     BACKGROUND_COLOR = (0, 0, 0)  # background color of the preview image
     TAP_COLOR_1 = (60, 200, 200)  # color of taps
@@ -43,8 +44,12 @@ class BeatmapPreviewer:
             + 2 * self.PADDING
             + (self.lanes - 1) * self.LANE_SPACING
         )
-        self.height = int(beatmap.hit_objects[-1].time * self.TIME_HEIGHT_SCALE + 10)
-        print(f"Preview image size: {self.width}x{self.height}")
+        self.column_width = self.width + self.COLUMN_SPACING
+        self.original_height = int(
+            beatmap.hit_objects[-1].time * self.TIME_HEIGHT_SCALE + 10
+        )
+        self.height = self.original_height
+        # print(f"Preview image size: {self.width}x{self.height}")
         # width = lanes * LANE_WIDTH, height = time of last hit object * TIME_HEIGHT_SCALE + 10
         self.img = Image.new("RGB", (self.width, self.height), self.BACKGROUND_COLOR)
         self.drawer = ImageDraw.Draw(self.img)
@@ -57,7 +62,12 @@ class BeatmapPreviewer:
             elif hit_object.type == 128:  # hold
                 self.draw_holds(hit_object)
         self.to_multi_column()
-        print("Finished rendering beatmap preview.")
+        for timing_point in self.beatmap.timing_points:
+            self.draw_timing_points(timing_point)
+        # for inherited_timing_point in self.beatmap.inherited_timing_points:
+        #     self.draw_inherited_timing_points(inherited_timing_point)
+
+        # print("Finished rendering beatmap preview.")
 
         return self.img
 
@@ -70,14 +80,16 @@ class BeatmapPreviewer:
         # time -> y coordinate, lane -> x coordinate
         x0 = lane * self.LANE_WIDTH + self.PADDING + lane * self.LANE_SPACING
         x1 = (lane + 1) * self.LANE_WIDTH + self.PADDING + lane * self.LANE_SPACING
-        y1 = self.height - (time * self.TIME_HEIGHT_SCALE + 2)
-        y0 = self.height - (time * self.TIME_HEIGHT_SCALE + 2 + self.TAP_HEIGHT)
-        
+        y1 = self.height - (time * self.TIME_HEIGHT_SCALE + self.VERTICAL_OFFSET)
+        y0 = self.height - (
+            time * self.TIME_HEIGHT_SCALE + self.VERTICAL_OFFSET + self.TAP_HEIGHT
+        )
+
         if lane % 2 == 0:
             color = self.TAP_COLOR_1
         else:
             color = self.TAP_COLOR_2
-            
+
         # print(f"Rendering tap hit object at lane {lane}, time {time}ms, coordinates ({x0}, {y0}, {x1}, {y1})")
         self.drawer.rounded_rectangle(
             (x0, y0, x1, y1), radius=5, fill=color, outline=(0, 0, 0)
@@ -94,10 +106,12 @@ class BeatmapPreviewer:
         hold_height = self.HOLD_HEIGHT * (duration // 2)
         x0 = lane * self.LANE_WIDTH + self.PADDING + lane * self.LANE_SPACING
         x1 = (lane + 1) * self.LANE_WIDTH + self.PADDING + lane * self.LANE_SPACING
-        y1 = self.height - (time * self.TIME_HEIGHT_SCALE + 2)
-        y0 = self.height - (time * self.TIME_HEIGHT_SCALE + 2 + hold_height)
-        # y0 = self.height - (time * self.TIME_HEIGHT_SCALE + 2 + hold_height + self.MIN_HOLD_HEIGHT)
-        
+        y1 = self.height - (time * self.TIME_HEIGHT_SCALE + self.VERTICAL_OFFSET)
+        y0 = self.height - (
+            time * self.TIME_HEIGHT_SCALE + self.VERTICAL_OFFSET + hold_height
+        )
+        # y0 = self.height - (time * self.TIME_HEIGHT_SCALE + self.VERTICAL_OFFSET + hold_height + self.MIN_HOLD_HEIGHT)
+
         if lane % 2 == 0:
             color = self.HOLD_COLOR_1
         else:
@@ -107,6 +121,44 @@ class BeatmapPreviewer:
         self.drawer.rounded_rectangle(
             (x0, y0, x1, y1), radius=5, fill=color, outline=(0, 0, 0)
         )
+
+    def draw_timing_points(self, timing_point: beatmap.TimingPoint) -> None:
+        """Renders timing points to the image. (after column splitting)"""
+        bpm = round(60000 / timing_point.beat_length, 2)  # round to 2 decimal places
+        time = timing_point.time
+        y = time * self.TIME_HEIGHT_SCALE + self.VERTICAL_OFFSET
+        # print(f"original y: {y}")
+        column = y // self.MAX_COLUMN_HEIGHT
+        y = (column + 1) * self.MAX_COLUMN_HEIGHT - y
+        x0 = column * self.column_width
+        x1 = x0 + self.column_width
+        x_text = x1 - self.COLUMN_SPACING + self.SPLIT_LINE_WEIGHT
+        y_text = y - 10  # slightly above the line
+        # print(f"Rendering timing point at time {time}ms, BPM {bpm}, coordinates ({x0}, {y}, {x1}, {y}), column {column}")
+        self.drawer.line((x0, y, x1, y), fill=(255, 0, 0), width=1)
+        self.drawer.text((x_text, y_text), f"{bpm}", fill=(255, 0, 0))
+
+    def draw_inherited_timing_points(
+        self, inherited_timing_point: beatmap.InheritedTimingPoint
+    ) -> None:
+        """Renders inherited timing points to the image. (after column splitting)
+        
+        unfinished.
+        """
+        raise NotImplementedError
+        scroll_speed = round(
+            100 / inherited_timing_point.slider_velocity_multiplier, 2
+        )  # round to 2 decimal places
+        time = inherited_timing_point.time
+        y = time * self.TIME_HEIGHT_SCALE + self.VERTICAL_OFFSET
+        column = y // self.MAX_COLUMN_HEIGHT
+        y = (column + 1) * self.MAX_COLUMN_HEIGHT - y
+        x0 = column * self.column_width
+        x1 = x0 + self.column_width
+        x_text = x1 - self.COLUMN_SPACING + self.SPLIT_LINE_WEIGHT
+        y_text = y - 10  # slightly above the line
+        self.drawer.line((x0, y, x1, y), fill=(0, 255, 0), width=1)
+        self.drawer.text((x_text, y_text), f"{scroll_speed}%", fill=(0, 255, 0))
 
     def to_multi_column(self) -> Image.Image:
         """Converts a tall preview image into multiple side-by-side columns."""
@@ -133,13 +185,27 @@ class BeatmapPreviewer:
         # Draw split lines at each column boundary.
         split_draw = ImageDraw.Draw(new_img)
         for boundary_idx in range(1, columns):
-            split_x = (
-                boundary_idx * self.width
-                + (boundary_idx - 1) * self.COLUMN_SPACING
-                + self.COLUMN_SPACING // 2
+            # split_x = (
+            #     boundary_idx * self.width
+            #     + (boundary_idx - 1) * self.COLUMN_SPACING
+            #     + self.COLUMN_SPACING // 2
+            # )
+            # split_draw.line(
+            #     (split_x, 0, split_x, self.MAX_COLUMN_HEIGHT - 1),
+            #     fill=self.SPLIT_LINE_COLOR,
+            #     width=self.SPLIT_LINE_WEIGHT,
+            # )
+            split_x1 = (
+                boundary_idx * self.width + (boundary_idx - 1) * self.COLUMN_SPACING
+            )
+            split_x2 = split_x1 + self.COLUMN_SPACING
+            split_draw.line(
+                (split_x1, 0, split_x1, self.MAX_COLUMN_HEIGHT - 1),
+                fill=self.SPLIT_LINE_COLOR,
+                width=self.SPLIT_LINE_WEIGHT,
             )
             split_draw.line(
-                (split_x, 0, split_x, self.MAX_COLUMN_HEIGHT - 1),
+                (split_x2, 0, split_x2, self.MAX_COLUMN_HEIGHT - 1),
                 fill=self.SPLIT_LINE_COLOR,
                 width=self.SPLIT_LINE_WEIGHT,
             )
