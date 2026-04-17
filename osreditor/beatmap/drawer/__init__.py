@@ -1,0 +1,1 @@
+from osreditor.beatmap.drawer.drawerMania import BeatmapPreviewer
