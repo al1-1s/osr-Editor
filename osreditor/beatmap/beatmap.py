@@ -88,7 +88,7 @@ class ObjectParser:
         parser_registry: dict[int, Callable[[HitObjectRaw], Payload]] = {
             1: ObjectParser.parse_circle,
             2: ObjectParser.parse_slider,
-            4: ObjectParser.parse_spinner,
+            8: ObjectParser.parse_spinner,
             128: ObjectParser.parse_hold,
         }
         for bit, parser in parser_registry.items():
@@ -244,6 +244,10 @@ class Beatmap:
                     hit_sound = int(parts[4])
                     object_params = ",".join(parts[5:]) if len(parts) > 5 else ""
                     raw = HitObjectRaw(x, y, time, type, hit_sound, object_params, line)
-                    payload = ObjectParser.parse(raw)
+                    try:
+                        payload = ObjectParser.parse(raw)
+                    except ValueError as e:
+                        raise ValueError(f"Warning: {e} Skipping hit object: {line}")
+
                     hitobjects.append(HitObject(raw, payload))
         return meta, hitobjects
