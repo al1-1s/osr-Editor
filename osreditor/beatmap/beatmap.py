@@ -45,13 +45,22 @@ class HoldData:
 @dataclass
 class TimingPoint:
     time: int
-    bpm: float
+    beat_length: float
+    meter: int
+    sample_set: int
+    sample_index: int
+    volume: int
+    effects: int
 
 
 @dataclass
 class InheritedTimingPoint:
     time: int
-    scroll_speed: float
+    slider_velocity_multiplier: float
+    sample_set: int
+    sample_index: int
+    volume: int
+    effects: int
 
 
 Payload = Union[CircleData, SliderData, SpinnerData, HoldData]
@@ -132,6 +141,8 @@ class Beatmap:
     ar: Optional[float] = None
     hp: Optional[float] = None
     cs: Optional[float] = None
+    timing_points: list[TimingPoint] = field(default_factory=list)
+    inherited_timing_points: list[InheritedTimingPoint] = field(default_factory=list)
 
     @classmethod
     def from_osu_file(cls, file_path: str) -> "Beatmap":
@@ -184,6 +195,44 @@ class Beatmap:
                         meta["od"] = float(line[len("OverallDifficulty:") :].strip())
                     elif line.startswith("ApproachRate:"):
                         meta["ar"] = float(line[len("ApproachRate:") :].strip())
+                elif section == "TimingPoints":
+                    parts = line.split(",")
+                    if len(parts) < 8:
+                        raise ValueError(f"Invalid timing point line: {line}")
+                    time = int(parts[0])
+                    beat_length = float(parts[1])
+                    meter = int(parts[2])
+                    sample_set = int(parts[3])
+                    sample_index = int(parts[4])
+                    volume = int(parts[5])
+                    is_inherited = int(parts[6]) == 0
+                    effects = int(parts[7])
+                    if beat_length > 0:
+                        meta["timing_points"] = meta.get("timing_points", []) + [
+                            TimingPoint(
+                                time,
+                                beat_length,
+                                meter,
+                                sample_set,
+                                sample_index,
+                                volume,
+                                effects,
+                            )
+                        ]
+                    else:
+                        meta["inherited_timing_points"] = (
+                            meta.get("inherited_timing_points", [])
+                            + [
+                                InheritedTimingPoint(
+                                    time,
+                                    -100 / beat_length,
+                                    sample_set,
+                                    sample_index,
+                                    volume,
+                                    effects,
+                                )
+                            ]
+                        )
                 elif section == "HitObjects":
                     parts = line.split(",")
                     if len(parts) < 5:
