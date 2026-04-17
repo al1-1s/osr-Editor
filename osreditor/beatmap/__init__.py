@@ -1,0 +1,1 @@
+from osreditor.beatmap.beatmap import Beatmap
